@@ -1,6 +1,6 @@
 /*
  *  This file is part of MUSIC.
- *  Copyright (C) 2012 INCF
+ *  Copyright (C) 2012, 2016 INCF
  *
  *  MUSIC is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -877,6 +877,47 @@ namespace MUSIC {
   }
 
 
+  static void
+  Allgatherv (MPI::Intracomm comm, void* sendbuf, int sendcount,
+	      const MPI::Datatype& sendtype, void* recvbuf,
+	      const int recvcounts[], const int displs[],
+	      const MPI::Datatype& recvtype)
+  {
+    // Compute buffer size
+    int size = 0;
+    for (int i = 0; i < comm.Get_size (); ++i)
+      size += recvcounts[i];
+
+    char* buffer = new char[size];
+
+    // Compute new displacement array
+    int *dd = new int[comm.Get_size ()];
+    dd[0] = 0;
+    for (int i = 1; i < comm.Get_size (); ++i)
+      {
+	dd[i] = dd[i - 1] + recvcounts[i - 1];
+      }
+
+    // Copy data from this rank into buffer
+    int r = comm.Get_rank ();
+    memcpy (buffer + dd[r],
+	    static_cast<char*> (recvbuf) + displs[r],
+	    recvcounts[r]);
+
+    comm.Allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+		     buffer, recvcounts, dd, MPI::BYTE);
+
+    // Copy data back
+    for (int i = 0; i < comm.Get_size (); ++i)
+      memcpy (static_cast<char*> (recvbuf) + displs[i],
+	      buffer + dd[i],
+	      recvcounts[i]);
+
+    delete[] dd;
+    delete[] buffer;
+  }
+  
+
   void
   MultiConnector::tick ()
   {
@@ -902,8 +943,9 @@ namespace MUSIC {
 #ifdef MUSIC_DEBUG
 	    dumprecvc (id_, recvcounts_, displs_, comm_.Get_size ());
 #endif
-	    comm_.Allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
-			      buffer_, recvcounts_, displs_, MPI::BYTE);
+	    Allgatherv (comm_,
+			MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+			buffer_, recvcounts_, displs_, MPI::BYTE);
 	    processReceived ();
 	  }
       }
@@ -916,8 +958,9 @@ namespace MUSIC {
 #ifdef MUSIC_DEBUG
 	dumprecvc (id_, recvcounts_, displs_, comm_.Get_size ());
 #endif
-	comm_.Allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
-			  buffer_, recvcounts_, displs_, MPI::BYTE);
+	Allgatherv (comm_,
+		    MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+		    buffer_, recvcounts_, displs_, MPI::BYTE);
 	for (BlockPtrs::iterator b = block_.begin ();
 	     b != block_.end ();
 	     ++b)
@@ -931,8 +974,9 @@ namespace MUSIC {
 #ifdef MUSIC_DEBUG
 	      dumprecvc (id_, recvcounts_, displs_, comm_.Get_size ());
 #endif
-	      comm_.Allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
-				buffer_, recvcounts_, displs_, MPI::BYTE);
+	      Allgatherv (comm_,
+			  MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+			  buffer_, recvcounts_, displs_, MPI::BYTE);
 	      break;
 	    }
 	processInput ();
