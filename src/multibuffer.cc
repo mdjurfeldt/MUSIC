@@ -668,6 +668,14 @@ namespace MUSIC {
     restructuring_ = true;
     update ();
     restructuring_ = false;
+
+    // allgatherv buffer
+    int nRanks = size ();
+    allgatherv_displs_ = new int[nRanks];
+    allgatherv_size_ = 0;
+    for (int i = 0; i < nRanks; ++i)
+      allgatherv_size_ += recvcounts_[i];
+    allgatherv_buffer_ = static_cast<char*> (malloc (allgatherv_size_));
   }
 
 
@@ -877,44 +885,44 @@ namespace MUSIC {
   }
 
 
-  static void
-  Allgatherv (MPI::Intracomm comm, void* sendbuf, int sendcount,
-	      const MPI::Datatype& sendtype, void* recvbuf,
-	      const int recvcounts[], const int displs[],
-	      const MPI::Datatype& recvtype)
+  void
+  MultiConnector::allgatherv (void* sendbuf, int sendcount,
+			      const MPI::Datatype& sendtype, void* recvbuf,
+			      const int recvcounts[], const int displs[],
+			      const MPI::Datatype& recvtype)
   {
-    // Compute buffer size
+    // Compute required buffer size
     int size = 0;
-    for (int i = 0; i < comm.Get_size (); ++i)
+    for (int i = 0; i < comm_.Get_size (); ++i)
       size += recvcounts[i];
 
-    char* buffer = new char[size];
+    if (size > allgatherv_size_)
+      {
+	allgatherv_size_ = size;
+	allgatherv_buffer_ = static_cast<char*> (realloc (allgatherv_buffer_, allgatherv_size_));
+      }
 
     // Compute new displacement array
-    int *dd = new int[comm.Get_size ()];
-    dd[0] = 0;
-    for (int i = 1; i < comm.Get_size (); ++i)
+    allgatherv_displs_[0] = 0;
+    for (int i = 1; i < comm_.Get_size (); ++i)
       {
-	dd[i] = dd[i - 1] + recvcounts[i - 1];
+	allgatherv_displs_[i] = allgatherv_displs_[i - 1] + recvcounts[i - 1];
       }
 
     // Copy data from this rank into buffer
-    int r = comm.Get_rank ();
-    memcpy (buffer + dd[r],
+    int r = comm_.Get_rank ();
+    memcpy (allgatherv_buffer_ + allgatherv_displs_[r],
 	    static_cast<char*> (recvbuf) + displs[r],
 	    recvcounts[r]);
 
-    comm.Allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
-		     buffer, recvcounts, dd, MPI::BYTE);
+    comm_.Allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+		     allgatherv_buffer_, recvcounts, allgatherv_displs_, MPI::BYTE);
 
     // Copy data back
-    for (int i = 0; i < comm.Get_size (); ++i)
+    for (int i = 0; i < comm_.Get_size (); ++i)
       memcpy (static_cast<char*> (recvbuf) + displs[i],
-	      buffer + dd[i],
+	      allgatherv_buffer_ + allgatherv_displs_[i],
 	      recvcounts[i]);
-
-    delete[] dd;
-    delete[] buffer;
   }
   
 
@@ -943,8 +951,7 @@ namespace MUSIC {
 #ifdef MUSIC_DEBUG
 	    dumprecvc (id_, recvcounts_, displs_, comm_.Get_size ());
 #endif
-	    Allgatherv (comm_,
-			MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+	    allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
 			buffer_, recvcounts_, displs_, MPI::BYTE);
 	    processReceived ();
 	  }
@@ -958,8 +965,7 @@ namespace MUSIC {
 #ifdef MUSIC_DEBUG
 	dumprecvc (id_, recvcounts_, displs_, comm_.Get_size ());
 #endif
-	Allgatherv (comm_,
-		    MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+	allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
 		    buffer_, recvcounts_, displs_, MPI::BYTE);
 	for (BlockPtrs::iterator b = block_.begin ();
 	     b != block_.end ();
@@ -974,8 +980,7 @@ namespace MUSIC {
 #ifdef MUSIC_DEBUG
 	      dumprecvc (id_, recvcounts_, displs_, comm_.Get_size ());
 #endif
-	      Allgatherv (comm_,
-			  MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
+	      allgatherv (MPI::IN_PLACE, 0, MPI::DATATYPE_NULL,
 			  buffer_, recvcounts_, displs_, MPI::BYTE);
 	      break;
 	    }

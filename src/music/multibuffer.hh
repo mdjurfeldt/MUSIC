@@ -1,6 +1,6 @@
 /*
  *  This file is part of MUSIC.
- *  Copyright (C) 2012 INCF
+ *  Copyright (C) 2012, 2016 INCF
  *
  *  MUSIC is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -325,6 +325,11 @@ namespace MUSIC {
     std::string id_; // used for debugging
     int* recvcounts_;
     int* displs_;
+    
+    int* allgatherv_displs_;
+    int allgatherv_size_;
+    char* allgatherv_buffer_;
+    
     bool recvcountInvalid_;
     bool restructuring_;
     //int rank_;
@@ -360,6 +365,10 @@ namespace MUSIC {
     int connectorCode () const { return connectorCode_; }
     void add (Connector* connector);
     void initialize ();
+    void allgatherv (void* sendbuf, int sendcount,
+		     const MPI::Datatype& sendtype, void* recvbuf,
+		     const int recvcounts[], const int displs[],
+		     const MPI::Datatype& recvtype);
     void tick ();
     bool isFinalized ();
     void finalize ();
